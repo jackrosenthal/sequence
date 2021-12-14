@@ -371,6 +371,31 @@ class Player:
         return "{} ({})".format(self.name, self.team)
 
 
+class ConsoleUI:
+    def _log_message(self, message):
+        print(message)
+
+    def notify_turn(self, player):
+        self._log_message(f"{player}'s turn")
+
+    def update_board(self, board):
+        self._log_message(str(board))
+
+    def notify_dead_card_discard(self, player, card):
+        self._log_message(f"{player} discarded a dead {card}")
+
+    def play_chip(self, player, card, pos):
+        self._log_message(f"{player} played the {card} at {pos}")
+
+    def remove_chip(self, player, team, card, pos):
+        self._log_message(f"{player} removed {team}'s chip on the {card} at {pos}")
+
+    def game_over(self, winning_team, winning_sequences):
+        self._log_message(
+            f"{winning_team} has won with {len(winning_sequences)} sequences!"
+        )
+
+
 class BaseStrategy:
     def set_game_parameters(self, player, board, sequences_to_win, cards_per_player):
         self.player = player
@@ -400,7 +425,7 @@ class RandomStrategy(BaseStrategy):
         moves = [
             move
             for card in self.player.hand
-            for move in self.board.iter_moves(card, player.team)
+            for move in self.board.iter_moves(card, self.player.team)
         ]
         return random.choice(moves)
 
@@ -637,7 +662,7 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
         return weight
 
 
-def play_game(teams, message=print):
+def play_game(teams, ui):
     if len(teams) == 2:
         sequences_to_win = 2
     elif len(teams) == 3:
@@ -692,8 +717,8 @@ def play_game(teams, message=print):
             player.hand.append(deck.pop())
 
     for player in itertools.cycle(players):
-        message("{}'s turn".format(player))
-        message("{}".format(board))
+        ui.notify_turn(player)
+        ui.update_board(board)
 
         # Evaluate any dead cards.
         for card in player.hand:
@@ -706,7 +731,7 @@ def play_game(teams, message=print):
                 # Card is dead!
                 if player.strategy.query_dead_card(card):
                     # They want it gone.
-                    message("{} discarded a dead {}".format(player, card))
+                    ui.notify_dead_card_discard(player, card)
                     player.hand.remove(card)
 
                     for notify_player in players:
@@ -724,15 +749,11 @@ def play_game(teams, message=print):
         player.hand.remove(card)
         if action is MoveType.PLACE_CHIP:
             board.put_chip(card, pos, player.team)
-            message("{} played the {} at {}".format(player, card, pos))
+            ui.play_chip(player, card, pos)
         else:
             board_card, board_chip = board.getpos(pos)
             board.remove_chip(card, pos, player.team)
-            message(
-                "{} removed {}'s chip on the {} at {}".format(
-                    player, board_chip.team, board_card, pos
-                )
-            )
+            ui.remove_chip(player, board_chip.team, board_card, pos)
 
         for notify_player in players:
             if notify_player is player:
@@ -743,12 +764,8 @@ def play_game(teams, message=print):
         winning_sequences = board.get_winning_sequences_for_team(player.team)
 
         if len(winning_sequences) >= sequences_to_win:
-            message("{}".format(board))
-            message(
-                "{} has won with {} sequences {!r}!".format(
-                    player.team, len(winning_sequences), winning_sequences
-                )
-            )
+            ui.update_board(board)
+            ui.game_over(player.team, winning_sequences)
             return player.team
 
         if deck:
@@ -792,7 +809,8 @@ def main():
         team = teams[teamcolor.lower()]
         player = Player("{}{}".format(strategy_cls.__name__, stnum), team, strategy)
 
-    play_game([team for team in teams.values() if team.players])
+    ui = ConsoleUI()
+    play_game([team for team in teams.values() if team.players], ui)
 
 
 if __name__ == "__main__":
