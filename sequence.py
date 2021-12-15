@@ -360,15 +360,38 @@ class Team:
 
 
 class Player:
-    def __init__(self, name, team, strategy):
+    def __init__(self, name, team, strategy, ui):
         self.name = name
         self.team = team
         self.strategy = strategy
         self.hand = []
+        self.ui = ui
         team.players.append(self)
 
     def __str__(self):
         return "{} ({})".format(self.name, self.team)
+
+
+def sort_hand(hand):
+    return sorted(
+        hand,
+        key=lambda card: (
+            card == "JJ",
+            card in two_eyeds,
+            card in one_eyeds,
+            "HCDS".find(card[1]),
+            "23456789XQKA".find(card[0]),
+        ),
+    )
+
+
+def describe_move(move, board):
+    card, action, pos = move
+    board_card, board_chip = board.getpos(pos)
+    if action == MoveType.PLACE_CHIP:
+        return f"Play on the {board_card} at {pos}."
+    else:  # action == MoveType.REMOVE_CHIP
+        return f"Remove the {board_chip.team}'s chip on the {board_card} at {pos}."
 
 
 class ConsoleUI:
@@ -394,6 +417,51 @@ class ConsoleUI:
         self._log_message(
             f"{winning_team} has won with {len(winning_sequences)} sequences!"
         )
+
+    def notify_pickup(self, player, card):
+        self._log_message(f"[{player}] You picked up the {card}.")
+
+    def query_dead_card(self, player, card):
+        while True:
+            answer = input(
+                f"[{player}] You have a dead card ({card}) in your hand. "
+                "Want to discard it (Y/n)? "
+            )
+            answer = answer.lower().strip()
+            if not answer or answer in ("y", "yes"):
+                return True
+            if answer in ("n", "no"):
+                return False
+
+    def query_move(self, player, board):
+        hand = sort_hand(player.hand)
+        while True:
+            card = input(f"[{player}] Which card to play ({', '.join(hand)})? ")
+            card = card.upper().strip()
+            if card not in player.hand:
+                self._log_message("That card is not in your hand!")
+                continue
+            moves = list(board.iter_moves(card, player.team))
+
+            prompt = "How do you want to play it?\n\n"
+            for i, move in enumerate(moves):
+                prompt += f"{i + 1:>3}. {describe_move(move, board)}\n"
+            prompt += (
+                f"{len(moves) + 1:>3}. Choose a different card to play from your "
+                "hand.\n\nYour choice? "
+            )
+            move_choice = input(prompt)
+            try:
+                move_idx = int(move_choice)
+            except ValueError:
+                self._log_message("Input not valid, expected an integer.")
+                continue
+            if move_idx == len(moves) + 1:
+                continue
+            if not (1 <= move_idx <= len(moves)):
+                self._log_message("Input not valid.")
+                continue
+            return moves[move_idx - 1]
 
 
 class BaseStrategy:
@@ -432,69 +500,13 @@ class RandomStrategy(BaseStrategy):
 
 class HumanStrategy(BaseStrategy):
     def notify_pickup(self, card):
-        print("[{}] You picked up the {}.".format(self.player, card))
+        self.player.ui.notify_pickup(self.player, card)
 
     def query_dead_card(self, card):
-        while True:
-            answer = input(
-                "[{}] You have a dead card ({}) in your hand. "
-                "Want to discard it (Y/n)? ".format(self.player, card)
-            )
-            answer = answer.lower().strip()
-            if not answer or answer in ("y", "yes"):
-                return True
-            if answer in ("n", "no"):
-                return False
+        return self.player.ui.query_dead_card(self.player, card)
 
     def query_move(self):
-        while True:
-            hand = sorted(
-                self.player.hand,
-                key=lambda card: (
-                    card == "JJ",
-                    card in two_eyeds,
-                    card in one_eyeds,
-                    "HCDS".find(card[1]),
-                    "23456789XQKA".find(card[0]),
-                ),
-            )
-            card = input(
-                "[{}] Which card to play ({})? ".format(self.player, ", ".join(hand))
-            )
-            card = card.upper().strip()
-            if card not in self.player.hand:
-                print("That card is not in your hand!")
-                continue
-            moves = list(self.board.iter_moves(card, self.player.team))
-            print("How do you want to play it?\n")
-            for i, move in enumerate(moves):
-                card, action, pos = move
-                board_card, board_chip = self.board.getpos(pos)
-                if action == MoveType.PLACE_CHIP:
-                    print("{:>3}. Play on the {} at {}.".format(i + 1, board_card, pos))
-                else:
-                    print(
-                        "{:>3}. Remove {}'s chip on the {} at {}.".format(
-                            i + 1, board_chip.team, board_card, pos
-                        )
-                    )
-            print(
-                "{:>3}. Choose a different card to play from your hand.\n".format(
-                    len(moves) + 1
-                )
-            )
-            move_choice = input("Your choice? ")
-            try:
-                move_idx = int(move_choice)
-            except ValueError:
-                print("Input not valid, expected an integer.")
-                continue
-            if move_idx == len(moves) + 1:
-                continue
-            if not (1 <= move_idx <= len(moves)):
-                print("Input not valid.")
-                continue
-            return moves[move_idx - 1]
+        return self.player.ui.query_move(self.player, self.board)
 
 
 class WeightedBaseStrategy(BaseStrategy):
@@ -787,6 +799,8 @@ def main():
     parser.add_argument("players", nargs="+")
     opts = parser.parse_args()
 
+    ui = ConsoleUI()
+
     for playerspec in opts.players:
         teamcolor, strategy_name_raw, *sargs_raw = playerspec.split(":")
 
@@ -807,9 +821,13 @@ def main():
         stnum = stnums.get(strategy_cls, 0) + 1
         stnums[strategy_cls] = stnum
         team = teams[teamcolor.lower()]
-        player = Player("{}{}".format(strategy_cls.__name__, stnum), team, strategy)
+        player = Player(
+            name="{}{}".format(strategy_cls.__name__, stnum),
+            team=team,
+            strategy=strategy,
+            ui=ui,
+        )
 
-    ui = ConsoleUI()
     play_game([team for team in teams.values() if team.players], ui)
 
 
