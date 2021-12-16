@@ -2,6 +2,7 @@
 
 import ast
 import argparse
+import curses
 import enum
 import io
 import itertools
@@ -17,6 +18,10 @@ two_eyeds = ["JC", "JD"]
 
 
 CORN = object()
+
+
+def manhattan_dist(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
 class MoveType(enum.Enum):
@@ -463,6 +468,368 @@ class ConsoleUI:
                 continue
             return moves[move_idx - 1]
 
+    def exit(self):
+        return
+
+
+class TUI(ConsoleUI):
+    def __init__(self):
+        self.screen = curses.initscr()
+        self.screen.keypad(True)
+        curses.start_color()
+        curses.use_default_colors()
+        curses.noecho()
+        curses.cbreak()
+        curses.curs_set(False)
+
+        self._loglines = []
+        self._player = None
+        self._board = None
+        self._board_caption = ""
+        self._hand = None
+        self._hand_line = "Your Hand:"
+        self._hand_ptr = -1
+        self._new_card = None
+        self._movelist = []
+        self._hinted_positions = []
+        self._move = None
+        self._turn_display = ""
+        self._color_pairs = {}
+        self._dead_card = None
+        self._dead_card_discard = True
+        self._alert = None
+
+    def exit(self):
+        self.screen.keypad(False)
+        curses.nocbreak()
+        curses.echo()
+        curses.endwin()
+        curses.curs_set(True)
+
+    def _key_is_enter(self, key):
+        return key in (curses.KEY_ENTER, 10, 13)
+
+    def _color_pair(self, fg, bg):
+        if (fg, bg) not in self._color_pairs:
+            pair_idx = len(self._color_pairs) + 16
+            curses.init_pair(pair_idx, fg, bg)
+            self._color_pairs[(fg, bg)] = pair_idx
+        return curses.color_pair(self._color_pairs[(fg, bg)])
+
+    def _log_message(self, message):
+        self._loglines.append(message)
+        self._redraw()
+
+    def _do_alert(self, message, button="OK"):
+        self._alert = (message, button)
+        self._redraw()
+        while True:
+            key = self.screen.getch()
+            if self._key_is_enter(key):
+                self._alert = None
+                return
+
+    def update_board(self, board):
+        self._board = board
+        self._redraw()
+
+    def notify_turn(self, player):
+        self._player = player
+        self._turn_display = f"{player}'s turn"
+        self._redraw()
+
+    def notify_pickup(self, player, card):
+        self._new_card = card
+
+    def remove_chip(self, player, team, card, pos):
+        if player == self._player:
+            return
+        if player.team == self._player.team:
+            team_text = "your team"
+            button_text = "Bummer"
+        else:
+            team_text = str(team)
+            button_text = "OK"
+        self._do_alert(
+            f"{player} removed {team_text}'s chip on the {card} at {pos}", button_text
+        )
+
+    def game_over(self, winning_team, sequences):
+        self._do_alert(
+            f"{winning_team} has won with {len(sequences)} sequences!", "Exit"
+        )
+
+    def _choose_card(self, player):
+        self._hand_line = "Choose a card from your hand to play:"
+        self._hand_ptr = 0
+        self._movelist = []
+
+        while True:
+            self._hinted_positions = [
+                pos
+                for _, _, pos in self._board.iter_moves(
+                    self._hand[self._hand_ptr], player.team
+                )
+            ]
+            self._redraw()
+            key = self.screen.getch()
+            if key == curses.KEY_LEFT:
+                self._hand_ptr = (self._hand_ptr - 1) % len(self._hand)
+            elif key == curses.KEY_RIGHT:
+                self._hand_ptr = (self._hand_ptr + 1) % len(self._hand)
+            elif self._key_is_enter(key):
+                selected_card = self._hand[self._hand_ptr]
+                self._hand_ptr = -1
+                self._hinted_positions = []
+                return selected_card
+
+    def _next_move_from_keypress(self, key):
+        _, _, cur_pos = self._move
+        cur_row, cur_col = cur_pos
+        qualfunc = {
+            curses.KEY_UP: lambda r, c: r < cur_row,
+            curses.KEY_DOWN: lambda r, c: r > cur_row,
+            curses.KEY_LEFT: lambda r, c: c < cur_col,
+            curses.KEY_RIGHT: lambda r, c: c > cur_col,
+        }.get(key, lambda r, c: False)
+
+        qual_moves = [m for m in self._movelist if qualfunc(m[2][0], m[2][1])]
+        if not qual_moves:
+            return self._move
+        return min(qual_moves, key=lambda move: manhattan_dist(move[2], cur_pos))
+
+    def query_move(self, player, board):
+        self._board = board
+        self._hand = sort_hand(player.hand)
+
+        while True:
+            chosen_card = self._choose_card(player)
+
+            self._movelist = list(self._board.iter_moves(chosen_card, player.team))
+            if not self._movelist:
+                self._do_alert("The card is dead. It cannot be played right now.")
+                continue
+
+            self._hand_line = "Your Hand:  (Press Esc to choose another card)"
+            self._hinted_positions = [pos for _, _, pos in self._movelist]
+            self._move = self._movelist[0]
+
+            while True:
+                self._board_caption = (
+                    f"Press Enter to {describe_move(self._move, self._board).lower()}"
+                )
+                self._redraw()
+                key = self.screen.getch()
+                if key == 27:
+                    self._move = None
+                    break
+                if self._key_is_enter(key):
+                    move = self._move
+                    self._movelist = []
+                    self._hinted_positions = []
+                    self._board_caption = ""
+                    self._hand_line = "Your Hand:"
+                    self._move = None
+                    return move
+                self._move = self._next_move_from_keypress(key)
+
+    def query_dead_card(self, player, card):
+        self._dead_card = card
+
+        while True:
+            self._redraw()
+            key = self.screen.getch()
+            if self._key_is_enter(key):
+                self._dead_card = None
+                return self._dead_card_discard
+            if key in (curses.KEY_LEFT, curses.KEY_RIGHT):
+                self._dead_card_discard = not self._dead_card_discard
+
+    def _draw_card(
+        self, y, x, card, chip=None, selected=False, hinted=False, new=False
+    ):
+        bg_color = curses.COLOR_WHITE
+        if hinted:
+            bg_color = curses.COLOR_YELLOW
+        if selected:
+            bg_color = curses.COLOR_CYAN
+
+        fg_color = (
+            curses.COLOR_RED
+            if card is not CORN and card[-1] in ("H", "D")
+            else curses.COLOR_BLACK
+        )
+        chip_fg_color = curses.COLOR_WHITE
+
+        if chip:
+            chip_color = {
+                TeamColor.BLUE: curses.COLOR_BLUE,
+                TeamColor.GREEN: curses.COLOR_GREEN,
+                TeamColor.RED: curses.COLOR_RED,
+            }[chip.team.color]
+        else:
+            chip_color = bg_color
+
+        if card is CORN:
+            chip_color = curses.COLOR_BLACK
+            card_label = "   "
+        elif card == "JJ":
+            card_label = "JOK"
+        else:
+            card_suit = {
+                "H": "♥",
+                "C": "♣",
+                "D": "♦",
+                "S": "♠",
+            }[card[-1]]
+            card_rank = "10" if card[0] == "X" else card[0]
+            card_label = f"{card_rank + card_suit:>3}"
+
+        if card in two_eyeds:
+            chip_chr = "‥"
+            chip_color = bg_color
+            chip_fg_color = curses.COLOR_BLACK
+        elif card in one_eyeds:
+            chip_chr = "."
+            chip_color = bg_color
+            chip_fg_color = curses.COLOR_BLACK
+        elif chip and chip.is_flipped():
+            chip_chr = "@"
+        elif chip or card is CORN:
+            chip_chr = " "
+        else:
+            chip_chr = ""
+
+        curses.init_pair(1, fg_color, bg_color)
+        curses.init_pair(2, chip_color, bg_color)
+        self.screen.addstr(y, x, card_label, self._color_pair(fg_color, bg_color))
+        self.screen.addstr(y + 1, x, "   ", self._color_pair(fg_color, bg_color))
+        if chip_chr:
+            self.screen.addstr(
+                y + 1, x + 1, chip_chr, self._color_pair(chip_fg_color, chip_color)
+            )
+        self.screen.addstr(
+            y + 2, x, "NEW" if new else "   ", self._color_pair(fg_color, bg_color)
+        )
+
+    def _fill(self, y, x, height, width, bg_color):
+        for i in range(height):
+            self.screen.addstr(
+                y + i, x, " " * width, self._color_pair(bg_color, bg_color)
+            )
+
+    def _button(
+        self, y, x, text, fg_color=curses.COLOR_BLACK, bg_color=curses.COLOR_WHITE
+    ):
+        self._fill(y, x, 3, len(text) + 2, bg_color=bg_color)
+        self.screen.addstr(y + 1, x + 1, text, self._color_pair(fg_color, bg_color))
+
+    def _redraw(self):
+        self.screen.erase()
+        screen_lines, screen_columns = self.screen.getmaxyx()
+        if screen_lines > 50 and screen_columns > 100:
+            card_space = 4
+        else:
+            card_space = 3
+        board_space = (card_space * 10) + 2
+
+        if self._board:
+            selected_pos = self._move[2] if self._move else None
+            for pos in iter_pos():
+                card, chip = self._board.getpos(pos)
+                row, col = pos
+                self._draw_card(
+                    row * card_space,
+                    col * card_space,
+                    card,
+                    chip=chip,
+                    selected=pos == selected_pos,
+                    hinted=pos in self._hinted_positions,
+                )
+            self.screen.addstr(board_space - 2, 0, self._board_caption)
+
+        if self._hand:
+            self.screen.addstr(2, board_space, self._hand_line)
+            seen_new_card = False
+            for i, card in enumerate(self._hand):
+                if not seen_new_card and self._new_card == card:
+                    new = True
+                    seen_new_card = True
+                else:
+                    new = False
+                self._draw_card(
+                    3,
+                    board_space + (i * card_space),
+                    card,
+                    selected=i == self._hand_ptr,
+                    new=new,
+                )
+
+        self.screen.addstr(0, board_space, self._turn_display)
+
+        for i, line in enumerate(self._loglines[-(screen_lines - board_space) :]):
+            self.screen.addstr(board_space + i, 0, line)
+
+        if self._dead_card:
+            dialog_y = (screen_lines // 2) - 6
+            dialog_x = (screen_columns // 2) - 20
+            self._fill(dialog_y, dialog_x, 12, 40, curses.COLOR_BLUE)
+            self.screen.addstr(
+                dialog_y + 1,
+                dialog_x + 1,
+                "You have a dead card:",
+                self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
+            )
+            self._draw_card(
+                dialog_y + 3,
+                dialog_x + 5,
+                self._dead_card,
+            )
+            self.screen.addstr(
+                dialog_y + 7,
+                dialog_x + 1,
+                "Want to discard it?",
+                self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
+            )
+            self._button(
+                dialog_y + 8,
+                dialog_x + 29,
+                "YES",
+                bg_color=curses.COLOR_CYAN
+                if self._dead_card_discard
+                else curses.COLOR_WHITE,
+            )
+            self._button(
+                dialog_y + 8,
+                dialog_x + 35,
+                "NO",
+                bg_color=curses.COLOR_WHITE
+                if self._dead_card_discard
+                else curses.COLOR_CYAN,
+            )
+
+        if self._alert:
+            alert_text, button_text = self._alert
+            width = max(len(alert_text) + 2, len(button_text) + 4)
+            height = 8
+            dialog_y = (screen_lines // 2) - (height // 2)
+            dialog_x = (screen_columns // 2) - (width // 2)
+            self._fill(dialog_y, dialog_x, height, width, curses.COLOR_BLUE)
+            self.screen.addstr(
+                dialog_y + 1,
+                dialog_x + 1,
+                alert_text,
+                self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
+            )
+            self._button(
+                dialog_y + height - 4,
+                dialog_x + width - len(button_text) - 3,
+                button_text,
+                bg_color=curses.COLOR_CYAN,
+            )
+
+        self.screen.refresh()
+
 
 class BaseStrategy:
     def set_game_parameters(self, player, board, sequences_to_win, cards_per_player):
@@ -796,39 +1163,46 @@ def main():
     stnums = {}
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--tui", action="store_true")
     parser.add_argument("players", nargs="+")
     opts = parser.parse_args()
 
-    ui = ConsoleUI()
+    if opts.tui:
+        ui = TUI()
+    else:
+        ui = ConsoleUI()
 
-    for playerspec in opts.players:
-        teamcolor, strategy_name_raw, *sargs_raw = playerspec.split(":")
+    try:
+        for playerspec in opts.players:
+            teamcolor, strategy_name_raw, *sargs_raw = playerspec.split(":")
 
-        sargs = []
-        skwargs = {}
-        for arg in sargs_raw:
-            m = re.fullmatch(r"\s*(\w+)\s*=(.*)", arg)
-            if m:
-                skwargs[m.group(1)] = ast.literal_eval(m.group(2))
-            else:
-                sargs.append(ast.literal_eval(arg))
+            sargs = []
+            skwargs = {}
+            for arg in sargs_raw:
+                m = re.fullmatch(r"\s*(\w+)\s*=(.*)", arg)
+                if m:
+                    skwargs[m.group(1)] = ast.literal_eval(m.group(2))
+                else:
+                    sargs.append(ast.literal_eval(arg))
 
-        strategy_cls = (
-            globals().get(strategy_name_raw)
-            or globals()["{}Strategy".format(strategy_name_raw)]
-        )
-        strategy = strategy_cls(*sargs, **skwargs)
-        stnum = stnums.get(strategy_cls, 0) + 1
-        stnums[strategy_cls] = stnum
-        team = teams[teamcolor.lower()]
-        player = Player(
-            name="{}{}".format(strategy_cls.__name__, stnum),
-            team=team,
-            strategy=strategy,
-            ui=ui,
-        )
+            strategy_cls = (
+                globals().get(strategy_name_raw)
+                or globals()["{}Strategy".format(strategy_name_raw)]
+            )
+            strategy = strategy_cls(*sargs, **skwargs)
+            stnum = stnums.get(strategy_cls, 0) + 1
+            stnums[strategy_cls] = stnum
+            team = teams[teamcolor.lower()]
+            player = Player(
+                name="{}{}".format(strategy_cls.__name__, stnum),
+                team=team,
+                strategy=strategy,
+                ui=ui,
+            )
 
-    play_game([team for team in teams.values() if team.players], ui)
+        play_game([team for team in teams.values() if team.players], ui)
+    finally:
+        ui.exit()
 
 
 if __name__ == "__main__":
