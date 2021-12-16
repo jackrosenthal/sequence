@@ -542,9 +542,9 @@ class TUI(ConsoleUI):
         self._new_card = card
 
     def remove_chip(self, player, team, card, pos):
-        if player == self._player:
+        if player is self._player:
             return
-        if player.team == self._player.team:
+        if player.team is self._player.team:
             team_text = "your team"
             button_text = "Bummer"
         else:
