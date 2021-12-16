@@ -543,7 +543,7 @@ class TUI(ConsoleUI):
     def remove_chip(self, player, team, card, pos):
         if player is self._player:
             return
-        if team is self._player.team:
+        if self._player and team is self._player.team:
             team_text = "your team"
             button_text = "Bummer"
         else:
@@ -897,6 +897,24 @@ class WeightedBaseStrategy(BaseStrategy):
             ),
             key=lambda move: self.move_weight(move),
         )
+
+
+class CentermostStrategy(WeightedBaseStrategy):
+    def _coord_weight(self, val):
+        if val in (4, 5):
+            return 10000
+        if val in (3, 6):
+            return 1000
+        if val in (2, 7):
+            return 100
+        if val in (1, 8):
+            return 10
+        return 1
+
+    def move_weight(self, move):
+        card, move_type, pos = move
+        pos_x, pos_y = pos
+        return self._coord_weight(pos_x) + self._coord_weight(pos_y)
 
 
 class SimpleWeightingStrategy(WeightedBaseStrategy):
