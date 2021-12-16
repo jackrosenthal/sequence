@@ -596,6 +596,14 @@ class TUI(ConsoleUI):
         qual_moves = [m for m in self._movelist if qualfunc(m[2][0], m[2][1])]
         if not qual_moves:
             return self._move
+
+        # Prefer moves which are in the same row or column.
+        qual_moves_sharing_dimen = [
+            m for m in qual_moves if m[2][0] == cur_row or m[2][1] == cur_col
+        ]
+        if qual_moves_sharing_dimen:
+            qual_moves = qual_moves_sharing_dimen
+
         return min(qual_moves, key=lambda move: manhattan_dist(move[2], cur_pos))
 
     def query_move(self, player, board):
