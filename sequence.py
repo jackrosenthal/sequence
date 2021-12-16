@@ -534,7 +534,6 @@ class TUI(ConsoleUI):
         self._redraw()
 
     def notify_turn(self, player):
-        self._player = player
         self._turn_display = f"{player}'s turn"
         self._redraw()
 
@@ -544,7 +543,7 @@ class TUI(ConsoleUI):
     def remove_chip(self, player, team, card, pos):
         if player is self._player:
             return
-        if player.team is self._player.team:
+        if team is self._player.team:
             team_text = "your team"
             button_text = "Bummer"
         else:
@@ -607,6 +606,7 @@ class TUI(ConsoleUI):
         return min(qual_moves, key=lambda move: manhattan_dist(move[2], cur_pos))
 
     def query_move(self, player, board):
+        self._player = player
         self._board = board
         self._hand = sort_hand(player.hand)
 
