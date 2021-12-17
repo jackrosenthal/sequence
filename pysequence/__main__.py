@@ -415,8 +415,11 @@ class ConsoleUI:
     def play_chip(self, player, card, pos):
         self._log_message(f"{player} played the {card} at {pos}")
 
-    def remove_chip(self, player, team, card, pos):
-        self._log_message(f"{player} removed {team}'s chip on the {card} at {pos}")
+    def remove_chip(self, player, card, team, board_card, pos):
+        self._log_message(
+            f"{player} used a {card} to remove {team}'s chip on the "
+            f"{board_card} at {pos}"
+        )
 
     def game_over(self, winning_team, winning_sequences):
         self._log_message(
@@ -540,7 +543,7 @@ class TUI(ConsoleUI):
     def notify_pickup(self, player, card):
         self._new_card = card
 
-    def remove_chip(self, player, team, card, pos):
+    def remove_chip(self, player, card, team, board_card, pos):
         if player is self._player:
             return
         if self._player and team is self._player.team:
@@ -550,7 +553,9 @@ class TUI(ConsoleUI):
             team_text = str(team)
             button_text = "OK"
         self._do_alert(
-            f"{player} removed {team_text}'s chip on the {card} at {pos}", button_text
+            f"{player} used the {card} to remove {team_text}'s chip on the "
+            f"{board_card} at {pos}",
+            button_text,
         )
 
     def game_over(self, winning_team, sequences):
@@ -1158,7 +1163,7 @@ def play_game(teams, ui):
         else:
             board_card, board_chip = board.getpos(pos)
             board.remove_chip(card, pos, player.team)
-            ui.remove_chip(player, board_chip.team, board_card, pos)
+            ui.remove_chip(player, card, board_chip.team, board_card, pos)
 
         for notify_player in players:
             if notify_player is player:
