@@ -494,6 +494,7 @@ class TUI(ConsoleUI):
         self._hand_line = "Your Hand:"
         self._hand_ptr = -1
         self._new_card = None
+        self._discard = None
         self._movelist = []
         self._hinted_positions = []
         self._move = None
@@ -549,7 +550,12 @@ class TUI(ConsoleUI):
     def notify_pickup(self, player, card):
         self._new_card = card
 
+    def play_chip(self, player, card, pos):
+        self._discard = card
+        self._log_message(f"{player} played the {card} at {pos}")
+
     def remove_chip(self, player, card, team, board_card, pos):
+        self._discard = card
         if player is self._player:
             return
         if self._player and team is self._player.team:
@@ -660,6 +666,8 @@ class TUI(ConsoleUI):
             key = self._getch()
             if key == curses.KEY_ENTER:
                 self._dead_card = None
+                if self._dead_card_discard:
+                    self._discard = card
                 return self._dead_card_discard
             if key in (curses.KEY_LEFT, curses.KEY_RIGHT):
                 self._dead_card_discard = not self._dead_card_discard
@@ -785,6 +793,10 @@ class TUI(ConsoleUI):
                     selected=i == self._hand_ptr,
                     new=new,
                 )
+
+        if self._discard:
+            self.screen.addstr(7, board_space, "Discard")
+            self._draw_card(8, board_space, self._discard)
 
         self.screen.addstr(0, board_space, self._turn_display)
 
