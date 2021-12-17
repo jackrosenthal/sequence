@@ -489,6 +489,7 @@ class TUI(ConsoleUI):
         self._player = None
         self._board = None
         self._board_caption = ""
+        self._invert_board = False
         self._hand = None
         self._hand_line = "Your Hand:"
         self._hand_ptr = -1
@@ -509,8 +510,13 @@ class TUI(ConsoleUI):
         curses.endwin()
         curses.curs_set(True)
 
-    def _key_is_enter(self, key):
-        return key in (curses.KEY_ENTER, 10, 13)
+    def _getch(self):
+        key = self.screen.getch()
+        if key in (10, 13):
+            key = curses.KEY_ENTER
+        if key == ord('i') or key == ord('I'):
+            self._invert_board = not self._invert_board
+        return key
 
     def _color_pair(self, fg, bg):
         if (fg, bg) not in self._color_pairs:
@@ -527,8 +533,8 @@ class TUI(ConsoleUI):
         self._alert = (message, button)
         self._redraw()
         while True:
-            key = self.screen.getch()
-            if self._key_is_enter(key):
+            key = self._getch()
+            if key == curses.KEY_ENTER:
                 self._alert = None
                 return
 
@@ -576,12 +582,12 @@ class TUI(ConsoleUI):
                 )
             ]
             self._redraw()
-            key = self.screen.getch()
+            key = self._getch()
             if key == curses.KEY_LEFT:
                 self._hand_ptr = (self._hand_ptr - 1) % len(self._hand)
             elif key == curses.KEY_RIGHT:
                 self._hand_ptr = (self._hand_ptr + 1) % len(self._hand)
-            elif self._key_is_enter(key):
+            elif key == curses.KEY_ENTER:
                 selected_card = self._hand[self._hand_ptr]
                 self._hand_ptr = -1
                 self._hinted_positions = []
@@ -632,11 +638,11 @@ class TUI(ConsoleUI):
                     f"Press Enter to {describe_move(self._move, self._board).lower()}"
                 )
                 self._redraw()
-                key = self.screen.getch()
+                key = self._getch()
                 if key == 27:
                     self._move = None
                     break
-                if self._key_is_enter(key):
+                if key == curses.KEY_ENTER:
                     move = self._move
                     self._movelist = []
                     self._hinted_positions = []
@@ -651,8 +657,8 @@ class TUI(ConsoleUI):
 
         while True:
             self._redraw()
-            key = self.screen.getch()
-            if self._key_is_enter(key):
+            key = self._getch()
+            if key == curses.KEY_ENTER:
                 self._dead_card = None
                 return self._dead_card_discard
             if key in (curses.KEY_LEFT, curses.KEY_RIGHT):
@@ -751,6 +757,8 @@ class TUI(ConsoleUI):
             for pos in iter_pos():
                 card, chip = self._board.getpos(pos)
                 row, col = pos
+                if self._invert_board:
+                    row = 9 - row
                 self._draw_card(
                     row * card_space,
                     col * card_space,
