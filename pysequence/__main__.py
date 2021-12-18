@@ -739,7 +739,9 @@ class TUI(ConsoleUI):
             y + 2, x, "NEW" if new else "   ", self._color_pair(fg_color, bg_color)
         )
 
-    def _fill(self, y, x, height, width, bg_color):
+    def _fill(self, y, x, height, width, bg_color, shadow=False):
+        if shadow:
+            self._fill(y + 1, x + 1, height, width, curses.COLOR_BLACK)
         for i in range(height):
             self.screen.addstr(
                 y + i, x, " " * width, self._color_pair(bg_color, bg_color)
@@ -806,7 +808,7 @@ class TUI(ConsoleUI):
         if self._dead_card:
             dialog_y = (screen_lines // 2) - 6
             dialog_x = (screen_columns // 2) - 20
-            self._fill(dialog_y, dialog_x, 12, 40, curses.COLOR_BLUE)
+            self._fill(dialog_y, dialog_x, 12, 40, curses.COLOR_BLUE, shadow=True)
             self.screen.addstr(
                 dialog_y + 1,
                 dialog_x + 1,
@@ -847,7 +849,7 @@ class TUI(ConsoleUI):
             height = 8
             dialog_y = (screen_lines // 2) - (height // 2)
             dialog_x = (screen_columns // 2) - (width // 2)
-            self._fill(dialog_y, dialog_x, height, width, curses.COLOR_BLUE)
+            self._fill(dialog_y, dialog_x, height, width, curses.COLOR_BLUE, shadow=True)
             self.screen.addstr(
                 dialog_y + 1,
                 dialog_x + 1,
