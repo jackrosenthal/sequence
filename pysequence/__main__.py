@@ -504,6 +504,10 @@ class TUI(ConsoleUI):
         self._dead_card_discard = True
         self._alert = None
 
+        # Default background/foreground
+        self._background = self._color_pair(curses.COLOR_WHITE, curses.COLOR_GREEN)
+        self.screen.attron(self._background)
+
     def exit(self):
         self.screen.keypad(False)
         curses.nocbreak()
@@ -515,7 +519,7 @@ class TUI(ConsoleUI):
         key = self.screen.getch()
         if key in (10, 13):
             key = curses.KEY_ENTER
-        if key == ord('i') or key == ord('I'):
+        if key == ord("i") or key == ord("I"):
             self._invert_board = not self._invert_board
         return key
 
@@ -727,16 +731,28 @@ class TUI(ConsoleUI):
         else:
             chip_chr = ""
 
-        curses.init_pair(1, fg_color, bg_color)
-        curses.init_pair(2, chip_color, bg_color)
-        self.screen.addstr(y, x, card_label, self._color_pair(fg_color, bg_color))
-        self.screen.addstr(y + 1, x, "   ", self._color_pair(fg_color, bg_color))
+        base_attr = 0
+        if new:
+            base_attr |= curses.A_BOLD
+
+        self.screen.addstr(
+            y, x, card_label, base_attr | self._color_pair(fg_color, bg_color)
+        )
+        self.screen.addstr(
+            y + 1, x, "   ", base_attr | self._color_pair(fg_color, bg_color)
+        )
         if chip_chr:
             self.screen.addstr(
-                y + 1, x + 1, chip_chr, self._color_pair(chip_fg_color, chip_color)
+                y + 1,
+                x + 1,
+                chip_chr,
+                base_attr | self._color_pair(chip_fg_color, chip_color),
             )
         self.screen.addstr(
-            y + 2, x, "NEW" if new else "   ", self._color_pair(fg_color, bg_color)
+            y + 2,
+            x,
+            "NEW" if new else "   ",
+            base_attr | self._color_pair(fg_color, bg_color),
         )
 
     def _fill(self, y, x, height, width, bg_color, shadow=False):
@@ -754,13 +770,13 @@ class TUI(ConsoleUI):
         self.screen.addstr(y + 1, x + 1, text, self._color_pair(fg_color, bg_color))
 
     def _redraw(self):
-        self.screen.erase()
         screen_lines, screen_columns = self.screen.getmaxyx()
+        self._fill(0, 0, screen_lines - 1, screen_columns, curses.COLOR_GREEN)
         if screen_lines > 50 and screen_columns > 100:
             card_space = 4
         else:
             card_space = 3
-        board_space = (card_space * 10) + 2
+        board_space = (card_space * 10) + 1
 
         if self._board:
             selected_pos = self._move[2] if self._move else None
@@ -777,10 +793,15 @@ class TUI(ConsoleUI):
                     selected=pos == selected_pos,
                     hinted=pos in self._hinted_positions,
                 )
-            self.screen.addstr(board_space - 2, 0, self._board_caption)
+            self.screen.addstr(
+                board_space - 1,
+                0,
+                self._board_caption.ljust(screen_columns),
+                curses.A_BOLD | self._color_pair(curses.COLOR_WHITE, curses.COLOR_RED),
+            )
 
         if self._hand:
-            self.screen.addstr(2, board_space, self._hand_line)
+            self.screen.addstr(2, board_space + 1, self._hand_line)
             seen_new_card = False
             for i, card in enumerate(self._hand):
                 if not seen_new_card and self._new_card == card:
@@ -790,20 +811,31 @@ class TUI(ConsoleUI):
                     new = False
                 self._draw_card(
                     3,
-                    board_space + (i * card_space),
+                    board_space + 1 + (i * card_space),
                     card,
                     selected=i == self._hand_ptr,
                     new=new,
                 )
 
         if self._discard:
-            self.screen.addstr(7, board_space, "Discard")
-            self._draw_card(8, board_space, self._discard)
+            self.screen.addstr(7, board_space + 1, "Discard")
+            self._draw_card(8, board_space + 1, self._discard)
 
-        self.screen.addstr(0, board_space, self._turn_display)
+        self.screen.addstr(
+            0, board_space + 1, self._turn_display, curses.A_BOLD | self._background
+        )
 
-        for i, line in enumerate(self._loglines[-(screen_lines - board_space) :]):
-            self.screen.addstr(board_space + i, 0, line)
+        disp_log = self._loglines[-(screen_lines - board_space - 1) :]
+        while len(disp_log) < (screen_lines - board_space - 1):
+            disp_log.append("")
+
+        for i, line in enumerate(disp_log):
+            self.screen.addstr(
+                board_space + i,
+                0,
+                line.ljust(screen_columns),
+                self._color_pair(curses.COLOR_BLACK, curses.COLOR_WHITE),
+            )
 
         if self._dead_card:
             dialog_y = (screen_lines // 2) - 6
@@ -849,7 +881,9 @@ class TUI(ConsoleUI):
             height = 8
             dialog_y = (screen_lines // 2) - (height // 2)
             dialog_x = (screen_columns // 2) - (width // 2)
-            self._fill(dialog_y, dialog_x, height, width, curses.COLOR_BLUE, shadow=True)
+            self._fill(
+                dialog_y, dialog_x, height, width, curses.COLOR_BLUE, shadow=True
+            )
             self.screen.addstr(
                 dialog_y + 1,
                 dialog_x + 1,
