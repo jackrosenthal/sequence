@@ -521,6 +521,7 @@ class TUI(ConsoleUI):
             key = curses.KEY_ENTER
         if key == ord("i") or key == ord("I"):
             self._invert_board = not self._invert_board
+            self._redraw()
         return key
 
     def _color_pair(self, fg, bg):
