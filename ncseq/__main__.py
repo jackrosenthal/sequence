@@ -363,6 +363,12 @@ class Team:
     def __str__(self):
         return "{} Team".format(self.color.name).title()
 
+    def add_player(self, *args, **kwargs):
+        kwargs.setdefault("team", self)
+        player = Player(*args, **kwargs)
+        self.players.append(player)
+        return player
+
 
 class Player:
     def __init__(self, name, team, strategy, ui):
@@ -371,7 +377,6 @@ class Player:
         self.strategy = strategy
         self.hand = []
         self.ui = ui
-        team.players.append(self)
 
     def __str__(self):
         return "{} ({})".format(self.name, self.team)
@@ -1282,9 +1287,8 @@ def main():
             stnum = stnums.get(strategy_cls, 0) + 1
             stnums[strategy_cls] = stnum
             team = teams[teamcolor.lower()]
-            player = Player(
+            team.add_player(
                 name="{}{}".format(strategy_cls.__name__, stnum),
-                team=team,
                 strategy=strategy,
                 ui=ui,
             )
