@@ -607,6 +607,15 @@ class TUI(ConsoleUI):
     def _next_move_from_keypress(self, key):
         _, _, cur_pos = self._move
         cur_row, cur_col = cur_pos
+
+        if self._invert_board:
+            key = {
+                curses.KEY_UP: curses.KEY_DOWN,
+                curses.KEY_DOWN: curses.KEY_UP,
+                curses.KEY_LEFT: curses.KEY_RIGHT,
+                curses.KEY_RIGHT: curses.KEY_LEFT,
+            }.get(key, key)
+
         qualfunc = {
             curses.KEY_UP: lambda r, c: r < cur_row,
             curses.KEY_DOWN: lambda r, c: r > cur_row,
@@ -786,6 +795,7 @@ class TUI(ConsoleUI):
                 row, col = pos
                 if self._invert_board:
                     row = 9 - row
+                    col = 9 - col
                 self._draw_card(
                     row * card_space,
                     col * card_space,
