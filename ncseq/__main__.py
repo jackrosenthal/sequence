@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-import ast
 import argparse
+import ast
 import curses
 import enum
+import functools
 import io
 import itertools
-import functools
 import random
 import re
 
