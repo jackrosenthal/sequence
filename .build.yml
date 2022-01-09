@@ -1,0 +1,14 @@
+image: archlinux
+packages:
+  - python
+  - python-poetry
+sources:
+  - https://git.sr.ht/~jmr/sequence
+tasks:
+  - poetry-install: |
+      cd sequence
+      poetry install
+  - check-style: |
+      poetry run black --check --diff .
+      poetry run isort --check --diff .
+      poetry run flake8 .
