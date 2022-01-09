@@ -9,6 +9,7 @@ tasks:
       cd sequence
       poetry install
   - check-style: |
+      cd sequence
       poetry run black --check --diff .
       poetry run isort --check --diff .
       poetry run flake8 .
