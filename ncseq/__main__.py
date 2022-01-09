@@ -992,13 +992,11 @@ class CentermostStrategy(WeightedBaseStrategy):
 class SimpleWeightingStrategy(WeightedBaseStrategy):
     DEFAULT_OFFENSE_MULTIPLIERS = (1, 1.1, 2, 4, 10)
     DEFAULT_DEFENSE_MULTIPLIERS = (0.1, 0.15, 0.5, 1.5, 5)
-    DEFAULT_ALIGNMENT_MULTIPLIERS = (0, 0.5, 0.75, 2, 3)
 
     def __init__(
         self,
         offense_multipliers=None,
         defense_multipliers=None,
-        alignment_multipliers=None,
         debug_moves=False,
         two_eyed_non_completion_multiplier=0.5,
         two_eyed_multiplier=0.9,
@@ -1009,9 +1007,6 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
         )
         self.defense_multipliers = (
             defense_multipliers or self.DEFAULT_DEFENSE_MULTIPLIERS
-        )
-        self.alignment_multipliers = (
-            alignment_multipliers or self.DEFAULT_ALIGNMENT_MULTIPLIERS
         )
         self.debug_moves = debug_moves
         self.two_eyed_non_completion_multiplier = two_eyed_non_completion_multiplier
@@ -1097,10 +1092,6 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
             print("  DEFENSE={}".format(defense_values))
 
         return defense_values
-
-    def _aligment_move_weights(self, move):
-        card, move_type, pos = move
-        alignment_values = [0] * 5
 
     def move_weight(self, move):
         card, move_type, pos = move
