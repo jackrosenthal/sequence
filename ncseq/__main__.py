@@ -426,7 +426,7 @@ class ConsoleUI:
             f"{board_card} at {pos}"
         )
 
-    def game_over(self, winning_team, winning_sequences):
+    def game_over(self, winning_team, winning_sequences, shut_out=False):
         self._log_message(
             f"{winning_team} has won with {len(winning_sequences)} sequences!"
         )
@@ -580,10 +580,11 @@ class TUI(ConsoleUI):
             button_text,
         )
 
-    def game_over(self, winning_team, sequences):
-        self._do_alert(
-            f"{winning_team} has won with {len(sequences)} sequences!", "Exit"
-        )
+    def game_over(self, winning_team, sequences, shut_out=False):
+        msg = f"{winning_team} has won with {len(sequences)} sequences!"
+        if shut_out:
+            msg += "\n\nIt was a shut out."
+        self._do_alert(msg, "Exit")
 
     def _choose_card(self, player):
         self._hand_line = "Choose a card from your hand to play:"
@@ -893,19 +894,21 @@ class TUI(ConsoleUI):
 
         if self._alert:
             alert_text, button_text = self._alert
+            alert_lines = alert_text.splitlines()
             width = max(len(alert_text) + 2, len(button_text) + 4)
-            height = 8
+            height = 7 + len(alert_lines)
             dialog_y = (screen_lines // 2) - (height // 2)
             dialog_x = (screen_columns // 2) - (width // 2)
             self._fill(
                 dialog_y, dialog_x, height, width, curses.COLOR_BLUE, shadow=True
             )
-            self.screen.addstr(
-                dialog_y + 1,
-                dialog_x + 1,
-                alert_text,
-                self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
-            )
+            for i, line in enumerate(alert_lines):
+                self.screen.addstr(
+                    dialog_y + 1 + i,
+                    dialog_x + 1,
+                    line,
+                    self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
+                )
             self._button(
                 dialog_y + height - 4,
                 dialog_x + width - len(button_text) - 3,
@@ -1234,11 +1237,16 @@ def play_game(teams, ui):
             notify_player.strategy.notify_move(player, (card, action, pos))
 
         # See if their team has won.
-        winning_sequences = board.get_winning_sequences_for_team(player.team)
+        sequences = {team: board.get_winning_sequences_for_team(team) for team in teams}
+        winning_sequences = sequences[player.team]
 
         if len(winning_sequences) >= sequences_to_win:
+            shut_out = True
+            for team, seqs in sequences.items():
+                if seqs and team is not player.team:
+                    shut_out = False
             ui.update_board(board)
-            ui.game_over(player.team, winning_sequences)
+            ui.game_over(player.team, winning_sequences, shut_out=shut_out)
             return player.team
 
         if deck:
