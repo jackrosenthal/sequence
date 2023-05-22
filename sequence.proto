@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+enum Suit {
+  SUIT_HEARTS = 0;
+  SUIT_CLUBS = 1;
+  SUIT_DIAMONDS = 2;
+  SUIT_SPADES = 3;
+  SUIT_JOKER = 4;
+}
+
+enum Rank {
+  RANK_2 = 0;
+  RANK_3 = 1;
+  RANK_4 = 2;
+  RANK_5 = 3;
+  RANK_6 = 4;
+  RANK_7 = 5;
+  RANK_8 = 6;
+  RANK_9 = 7;
+  RANK_10 = 8;
+  RANK_JACK = 9;
+  RANK_QUEEN = 10;
+  RANK_KING = 11;
+  RANK_ACE = 12;
+  RANK_JOKER = 13;
+}
+
+message Card {
+  Suit suit = 1;
+  Rank rank = 2;
+}
+
+enum ChipColor {
+  CHIP_NONE = 0;
+  CHIP_BLUE = 1;
+  CHIP_GREEN = 2;
+  CHIP_RED = 3;
+}
+
+message BoardPositionCard {
+  Card card = 1;
+  ChipColor chip = 2;
+};
+
+message BoardPosition {
+  oneof card_or_free {
+    BoardPositionCard card = 1;
+    bool free = 2;
+  };
+  ChipColor chip = 3;
+}
+
+message BoardRow {
+  repeated BoardPosition pos = 1;
+}
+
+message Board {
+  repeated Board rows = 1;
+}
+
+message Hand {
+  repeated Card cards = 1;
+}
+
+message Player {
+  uint32 id = 1;
+  string name = 2;
+  ChipColor team = 3;
+}
+
+message PlayerPrivate {
+  Player public = 1;
+  Hand hand = 2;
+}
+
+message GameState {
+  Player current_player = 1;
+  repeated Player players = 2;
+  Board board = 3;
+}
+
+message NewGameRequest {
+}
+
+message NewGameResponse {
+  string game_code = 1;
+  uint32 admin_token = 2;
+}
+
+message JoinGameRequest {
+  string game_code = 1;
+  string player_name = 2;
+}
+
+message JoinGameResponse {
+  uint32 player_token = 1;
+}
+
+message WaitSetupEventRequest {
+}
+
+message WaitSetupEventResponse {
+  oneof event {
+    Player player_change = 1;
+    GameState game_started = 2;
+  }
+}
+
+message SetPlayerNameRequest {
+  oneof token {
+    uint32 player_token = 1;
+    uint32 admin_token = 2;
+  };
+
+  string player_name = 3;
+}
+
+message SetPlayerNameResponse {
+
+}
+
+service GameServer {
+  rpc NewGame(NewGameRequest) returns (NewGameResponse);
+  rpc JoinGame(JoinGameRequest) returns (JoinGameResponse);
+  rpc WaitSetupEvent(WaitSetupEventRequest) returns (stream WaitSetupEventResponse);
+  rpc SetPlayerName(SetPlayerNameRequest) returns (SetPlayerNameResponse);
+}
