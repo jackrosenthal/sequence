@@ -12,7 +12,7 @@ import re
 
 ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "X", "J", "Q", "K", "A"]
 suits = ["H", "C", "D", "S"]
-all_cards = ["{}{}".format(rank, suit) for rank in ranks for suit in suits] * 2 + ["JJ"]
+all_cards = [f"{rank}{suit}" for rank in ranks for suit in suits] * 2 + ["JJ"]
 one_eyeds = ["JS", "JH"]
 two_eyeds = ["JC", "JD"]
 
@@ -189,9 +189,7 @@ class Board:
         if current_chip:
             raise IllegalMove("There is already a chip here.")
         if not (card in two_eyeds or card == "JJ") and card != current_card:
-            raise IllegalMove(
-                "The {} cannot be played on the {}.".format(card, current_card)
-            )
+            raise IllegalMove(f"The {card} cannot be played on the {current_card}.")
         row, column = pos
         self.chips[row][column] = Chip(team)
         self.update_sequences()
@@ -206,7 +204,7 @@ class Board:
         if current_chip.team is team:
             raise IllegalMove("You cannot remove your own chips.")
         if card != "JJ" and card not in one_eyeds:
-            raise IllegalMove("The {} cannot be used to remove chips.".format(card))
+            raise IllegalMove(f"The {card} cannot be used to remove chips.")
         row, column = pos
         self.chips[row][column] = None
 
@@ -295,10 +293,10 @@ class Board:
         output = io.StringIO()
         output.write("   ")
         for col in range(10):
-            output.write("{}  ".format(col))
+            output.write(f"{col}  ")
         output.write("\n")
         for row in range(10):
-            output.write("{}  ".format(row))
+            output.write(f"{row}  ")
             for col in range(10):
                 card, chip = self.getpos((row, col))
                 if card is CORN:
@@ -361,7 +359,7 @@ class Team:
         self.players = []
 
     def __str__(self):
-        return "{} Team".format(self.color.name).title()
+        return f"{self.color.name} Team".title()
 
     def add_player(self, *args, **kwargs):
         kwargs.setdefault("team", self)
@@ -379,7 +377,7 @@ class Player:
         self.ui = ui
 
     def __str__(self):
-        return "{} ({})".format(self.name, self.team)
+        return f"{self.name} ({self.team})"
 
 
 def sort_hand(hand):
@@ -1058,7 +1056,7 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
             offense_values[completion] += 1
 
         if self.debug_moves:
-            print("  OFFENSE={}".format(offense_values))
+            print(f"  OFFENSE={offense_values}")
         return offense_values
 
     def _defense_move_weights(self, move):
@@ -1097,7 +1095,7 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
                 defense_values[completion] += dvalue
 
         if self.debug_moves:
-            print("  DEFENSE={}".format(defense_values))
+            print(f"  DEFENSE={defense_values}")
 
         return defense_values
 
@@ -1107,7 +1105,7 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
         weight = 0
 
         if self.debug_moves:
-            print("Play {}:".format(move))
+            print(f"Play {move}:")
         offense_weights = self._offense_move_weights(move)
         for w, m in zip(offense_weights, self.offense_multipliers):
             weight += w * m
@@ -1289,14 +1287,14 @@ def main():
 
             strategy_cls = (
                 globals().get(strategy_name_raw)
-                or globals()["{}Strategy".format(strategy_name_raw)]
+                or globals()[f"{strategy_name_raw}Strategy"]
             )
             strategy = strategy_cls(*sargs, **skwargs)
             stnum = stnums.get(strategy_cls, 0) + 1
             stnums[strategy_cls] = stnum
             team = teams[teamcolor.lower()]
             team.add_player(
-                name="{}{}".format(strategy_cls.__name__, stnum),
+                name=f"{strategy_cls.__name__}{stnum}",
                 strategy=strategy,
                 ui=ui,
             )
