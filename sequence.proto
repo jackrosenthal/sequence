@@ -94,9 +94,12 @@ message JoinGameRequest {
 
 message JoinGameResponse {
   uint32 player_token = 1;
+  Player player = 2;
 }
 
 message WaitSetupEventRequest {
+  string game_code = 1;
+  uint32 player_token = 2;
 }
 
 message WaitSetupEventResponse {
@@ -112,11 +115,11 @@ message SetPlayerNameRequest {
     uint32 admin_token = 2;
   };
 
-  string player_name = 3;
+  uint32 player_id = 3;
+  string player_name = 4;
 }
 
 message SetPlayerNameResponse {
-
 }
 
 service GameServer {

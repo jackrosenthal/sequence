@@ -17,6 +17,7 @@
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
+using grpc::ServerWriter;
 using grpc::Status;
 
 std::string GenerateGameCode(absl::BitGenRef gen) {
@@ -36,11 +37,15 @@ class Game {
  public:
   std::optional<Player *> GetPlayerById(uint32_t id) {
     for (int i = 0; i < state.players_size(); i++) {
+      std::cerr << "i=" << i << std::endl;
       auto player = state.mutable_players(i);
+      std::cerr << "id=" << player->id() << std::endl;
       if (player->id() == id) {
         return player;
       }
     }
+
+    std::cerr << "No player with id " << id << std::endl;
 
     return std::nullopt;
   }
@@ -49,6 +54,7 @@ class Game {
     auto search = token_to_id.find(token);
     if (search == token_to_id.end()) {
       return std::nullopt;
+      std::cerr << "No player with token " << token << std::endl;
     }
 
     return GetPlayerById(search->second);
@@ -61,6 +67,15 @@ class Game {
 
 class GameServerImpl final : public GameServer::Service {
  public:
+  std::optional<Game *> GetGameByCode(std::string code) {
+    auto search = games_by_code.find(code);
+    if (search == games_by_code.end()) {
+      return std::nullopt;
+    }
+
+    return search->second.get();
+  }
+
   Status NewGame(ServerContext *context, const NewGameRequest *request,
                  NewGameResponse *response) override {
     std::string game_code;
@@ -81,21 +96,42 @@ class GameServerImpl final : public GameServer::Service {
 
   Status JoinGame(ServerContext *context, const JoinGameRequest *request,
                   JoinGameResponse *response) override {
-    auto search = games_by_code.find(request->game_code());
-    if (search == games_by_code.end()) {
-      return Status(grpc::NOT_FOUND,
-                    absl::StrFormat("No game with code \"%s\" exists!",
-                                    request->game_code()));
+    auto maybe_game = GetGameByCode(request->game_code());
+    if (!maybe_game.has_value()) {
+      return Status(grpc::NOT_FOUND, "Invalid game code");
     }
-
-    auto game = search->second.get();
+    auto game = maybe_game.value();
     auto player = game->state.add_players();
     auto token = GenerateToken(rng);
     auto id = GenerateToken(rng);
 
     player->set_id(id);
     response->set_player_token(token);
+    response->set_allocated_player(player);
     game->token_to_id.try_emplace(token, id);
+    return Status::OK;
+  }
+
+  Status WaitSetupEvent(ServerContext *context,
+                        const WaitSetupEventRequest *request,
+                        ServerWriter<WaitSetupEventResponse> *stream) override {
+    auto maybe_game = GetGameByCode(request->game_code());
+    if (!maybe_game.has_value()) {
+      return Status(grpc::NOT_FOUND, "Invalid game code");
+    }
+    auto game = maybe_game.value();
+
+    auto maybe_player = game->GetPlayerByToken(request->player_token());
+    if (!maybe_player.has_value()) {
+      return Status(grpc::NOT_FOUND, "Invalid player token");
+    }
+
+    do {
+    } while (!game->state.has_current_player());
+
+    WaitSetupEventResponse response;
+    response.set_allocated_game_started(&game->state);
+    stream->Write(response);
     return Status::OK;
   }
 
