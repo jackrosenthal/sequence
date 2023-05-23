@@ -480,20 +480,20 @@ class ConsoleUI:
 
 def coord_closeness_to_center(val):
     if val in (4, 5):
-        return 10000
+        return 5
     if val in (3, 6):
-        return 1000
+        return 4
     if val in (2, 7):
-        return 100
+        return 3
     if val in (1, 8):
-        return 10
+        return 2
     return 1
 
 
 def move_weight_centermost(move):
     card, move_type, pos = move
     pos_x, pos_y = pos
-    return coord_closeness_to_center(pos_x) + coord_closeness_to_center(pos_y)
+    return min(coord_closeness_to_center(pos_x), coord_closeness_to_center(pos_y))
 
 
 class TUI(ConsoleUI):
