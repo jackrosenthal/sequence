@@ -478,6 +478,24 @@ class ConsoleUI:
         return
 
 
+def coord_closeness_to_center(val):
+    if val in (4, 5):
+        return 10000
+    if val in (3, 6):
+        return 1000
+    if val in (2, 7):
+        return 100
+    if val in (1, 8):
+        return 10
+    return 1
+
+
+def move_weight_centermost(move):
+    card, move_type, pos = move
+    pos_x, pos_y = pos
+    return coord_closeness_to_center(pos_x) + coord_closeness_to_center(pos_y)
+
+
 class TUI(ConsoleUI):
     def __init__(self):
         self.screen = curses.initscr()
@@ -655,7 +673,7 @@ class TUI(ConsoleUI):
 
             self._hand_line = "Your Hand:  (Press Esc to choose another card)"
             self._hinted_positions = [pos for _, _, pos in self._movelist]
-            self._move = self._movelist[0]
+            self._move = max(self._movelist, key=move_weight_centermost)
 
             while True:
                 self._board_caption = (
@@ -978,21 +996,8 @@ class WeightedBaseStrategy(BaseStrategy):
 
 
 class CentermostStrategy(WeightedBaseStrategy):
-    def _coord_weight(self, val):
-        if val in (4, 5):
-            return 10000
-        if val in (3, 6):
-            return 1000
-        if val in (2, 7):
-            return 100
-        if val in (1, 8):
-            return 10
-        return 1
-
     def move_weight(self, move):
-        card, move_type, pos = move
-        pos_x, pos_y = pos
-        return self._coord_weight(pos_x) + self._coord_weight(pos_y)
+        return move_weight_centermost(move)
 
 
 class SimpleWeightingStrategy(WeightedBaseStrategy):
