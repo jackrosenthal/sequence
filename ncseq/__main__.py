@@ -20,6 +20,22 @@ two_eyeds = ["JC", "JD"]
 CORN = object()
 
 
+def pretty_card(card):
+    if card is CORN:
+        return "Corner"
+    if card == "JJ":
+        return "Joker"
+    else:
+        card_suit = {
+            "H": "♥",
+            "C": "♣",
+            "D": "♦",
+            "S": "♠",
+        }[card[-1]]
+        card_rank = "10" if card[0] == "X" else card[0]
+        return card_rank + card_suit
+
+
 def manhattan_dist(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
@@ -397,9 +413,12 @@ def describe_move(move, board):
     card, action, pos = move
     board_card, board_chip = board.getpos(pos)
     if action == MoveType.PLACE_CHIP:
-        return f"Play on the {board_card} at {pos}."
+        return f"Play on the {pretty_card(board_card)} at {pos}."
     else:  # action == MoveType.REMOVE_CHIP
-        return f"Remove the {board_chip.team}'s chip on the {board_card} at {pos}."
+        return (
+            f"Remove the {board_chip.team}'s chip on the "
+            f"{pretty_card(board_card)} at {pos}."
+        )
 
 
 class ConsoleUI:
@@ -413,15 +432,15 @@ class ConsoleUI:
         self._log_message(str(board))
 
     def notify_dead_card_discard(self, player, card):
-        self._log_message(f"{player} discarded a dead {card}")
+        self._log_message(f"{player} discarded a dead {pretty_card(card)}")
 
     def play_chip(self, player, card, pos):
-        self._log_message(f"{player} played the {card} at {pos}")
+        self._log_message(f"{player} played the {pretty_card(card)} at {pos}")
 
     def remove_chip(self, player, card, team, board_card, pos):
         self._log_message(
-            f"{player} used a {card} to remove {team}'s chip on the "
-            f"{board_card} at {pos}"
+            f"{player} used a {pretty_card(card)} to remove {team}'s chip on "
+            f"the {pretty_card(board_card)} at {pos}"
         )
 
     def game_over(self, winning_team, winning_sequences, shut_out=False):
@@ -578,7 +597,7 @@ class TUI(ConsoleUI):
 
     def play_chip(self, player, card, pos):
         self._discard = card
-        self._log_message(f"{player} played the {card} at {pos}")
+        self._log_message(f"{player} played the {pretty_card(card)} at {pos}")
 
     def remove_chip(self, player, card, team, board_card, pos):
         self._discard = card
@@ -591,8 +610,8 @@ class TUI(ConsoleUI):
             team_text = str(team)
             button_text = "OK"
         self._do_alert(
-            f"{player} used the {card} to remove {team_text}'s chip on the "
-            f"{board_card} at {pos}",
+            f"{player} used the {pretty_card(card)} to remove {team_text}'s "
+            f"chip on the {pretty_card(board_card)} at {pos}",
             button_text,
         )
 
@@ -745,17 +764,8 @@ class TUI(ConsoleUI):
         if card is CORN:
             chip_color = curses.COLOR_BLACK
             card_label = "   "
-        elif card == "JJ":
-            card_label = "JOK"
         else:
-            card_suit = {
-                "H": "♥",
-                "C": "♣",
-                "D": "♦",
-                "S": "♠",
-            }[card[-1]]
-            card_rank = "10" if card[0] == "X" else card[0]
-            card_label = f"{card_rank + card_suit:>3}"
+            card_label = f"{pretty_card(card):>3}"[:3].upper()
 
         if card in two_eyeds:
             chip_chr = "‥"
