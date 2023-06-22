@@ -638,6 +638,15 @@ class TUI(ConsoleUI):
                 curses.KEY_RIGHT: curses.KEY_LEFT,
             }.get(key, key)
 
+        if key == ord(" "):
+            idx = self._movelist.index(self._move)
+            if self._invert_board:
+                idx -= 1
+            else:
+                idx += 1
+            idx %= len(self._movelist)
+            return self._movelist[idx]
+
         qualfunc = {
             curses.KEY_UP: lambda r, c: r < cur_row,
             curses.KEY_DOWN: lambda r, c: r > cur_row,
