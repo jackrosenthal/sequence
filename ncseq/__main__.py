@@ -524,11 +524,13 @@ class TUI(ConsoleUI):
         curses.noecho()
         curses.cbreak()
         curses.curs_set(False)
+        curses.mousemask(curses.BUTTON1_CLICKED)
 
         self._loglines = []
         self._player = None
         self._board = None
         self._board_caption = ""
+        self._board_clicked_pos = None
         self._invert_board = False
         self._hand = None
         self._hand_line = "Your Hand:"
@@ -543,6 +545,7 @@ class TUI(ConsoleUI):
         self._dead_card = None
         self._dead_card_discard = True
         self._alert = None
+        self._mousemap = []
 
         # Default background/foreground
         self._background = self._color_pair(curses.COLOR_WHITE, curses.COLOR_GREEN)
@@ -562,6 +565,16 @@ class TUI(ConsoleUI):
         if key == ord("i") or key == ord("I"):
             self._invert_board = not self._invert_board
             self._redraw()
+        if key == curses.KEY_MOUSE:
+            try:
+                _, x, y, _, state = curses.getmouse()
+            except curses.error as e:
+                pass
+            else:
+                for handler in self._mousemap:
+                    rv = handler(y, x, state)
+                    if rv:
+                        return rv
         return key
 
     def _color_pair(self, fg, bg):
@@ -578,11 +591,10 @@ class TUI(ConsoleUI):
     def _do_alert(self, message, button="OK"):
         self._alert = (message, button)
         self._redraw()
-        while True:
+        while self._alert:
             key = self._getch()
             if key == curses.KEY_ENTER:
                 self._alert = None
-                return
 
     def update_board(self, board):
         self._board = board
@@ -621,7 +633,26 @@ class TUI(ConsoleUI):
             msg += "\n\nIt was a shut out."
         self._do_alert(msg, "Exit")
 
+    def _hand_click_handler(self, y, x, state, x_start, card_space):
+        if not (3 <= y <= 5):
+            return
+        x -= x_start
+        if x < 0:
+            return
+        idx = x // card_space
+        if idx >= len(self._hand):
+            return
+        self._hand_ptr = idx
+        return curses.KEY_ENTER
+
     def _choose_card(self, player):
+        if self._hand_ptr >= 0:
+            # Mouse event selected a new card already.
+            selected_card = self._hand[self._hand_ptr]
+            self._hand_ptr = -1
+            self._hinted_positions = []
+            return selected_card
+
         self._hand_line = "Choose a card from your hand to play:"
         self._hand_ptr = 0
         self._movelist = []
@@ -686,10 +717,23 @@ class TUI(ConsoleUI):
 
         return min(qual_moves, key=lambda move: manhattan_dist(move[2], cur_pos))
 
+    def _board_click_handler(self, y, x, state, card_space):
+        row = y // card_space
+        column = x // card_space
+        if self._invert_board:
+            row = 9 - row
+            column = 9 - column
+        pos = (row, column)
+        if pos not in self._hinted_positions:
+            return
+        self._board_clicked_pos = pos
+        return curses.KEY_ENTER
+
     def query_move(self, player, board):
         self._player = player
         self._board = board
         self._hand = sort_hand(player.hand)
+        self._board_clicked_pos = None
 
         while True:
             chosen_card = self._choose_card(player)
@@ -704,12 +748,30 @@ class TUI(ConsoleUI):
             self._move = max(self._movelist, key=move_weight_centermost)
 
             while True:
+                if self._board_clicked_pos:
+                    self._move = None
+                    moves = [
+                        move
+                        for move in self._movelist
+                        if move[2] == self._board_clicked_pos
+                    ]
+                    self._board_clicked_pos = None
+                    assert len(moves) == 1
+                    self._movelist = []
+                    self._hinted_positions = []
+                    self._board_caption = ""
+                    return moves[0]
                 self._board_caption = (
                     f"Press Enter to {describe_move(self._move, self._board).lower()}"
                 )
                 self._redraw()
                 key = self._getch()
+                if self._board_clicked_pos:
+                    continue
                 if key == 27:
+                    self._move = None
+                    break
+                if self._hand_ptr >= 0 and key == curses.KEY_ENTER:
                     self._move = None
                     break
                 if key == curses.KEY_ENTER:
@@ -725,16 +787,16 @@ class TUI(ConsoleUI):
     def query_dead_card(self, player, card):
         self._dead_card = card
 
-        while True:
+        while self._dead_card:
             self._redraw()
             key = self._getch()
             if key == curses.KEY_ENTER:
                 self._dead_card = None
                 if self._dead_card_discard:
                     self._discard = card
-                return self._dead_card_discard
             if key in (curses.KEY_LEFT, curses.KEY_RIGHT):
                 self._dead_card_discard = not self._dead_card_discard
+        return self._dead_card_discard
 
     def _draw_card(
         self, y, x, card, chip=None, selected=False, hinted=False, new=False
@@ -815,12 +877,30 @@ class TUI(ConsoleUI):
             )
 
     def _button(
-        self, y, x, text, fg_color=curses.COLOR_BLACK, bg_color=curses.COLOR_WHITE
+        self,
+        y,
+        x,
+        text,
+        fg_color=curses.COLOR_BLACK,
+        bg_color=curses.COLOR_WHITE,
+        on_click=None,
     ):
         self._fill(y, x, 3, len(text) + 2, bg_color=bg_color)
         self.screen.addstr(y + 1, x + 1, text, self._color_pair(fg_color, bg_color))
+        if on_click:
+
+            def mouse_handler(mouse_y, mouse_x, state):
+                if (
+                    y <= mouse_y < y + 3
+                    and x <= mouse_x < x + len(text) + 2
+                    and state & curses.BUTTON1_CLICKED
+                ):
+                    on_click()
+
+            self._mousemap.append(mouse_handler)
 
     def _redraw(self):
+        self._mousemap = []
         screen_lines, screen_columns = self.screen.getmaxyx()
         self._fill(0, 0, screen_lines - 1, screen_columns, curses.COLOR_GREEN)
         if screen_lines > 50 and screen_columns > 100:
@@ -852,6 +932,14 @@ class TUI(ConsoleUI):
                 curses.A_BOLD | self._color_pair(curses.COLOR_WHITE, curses.COLOR_RED),
             )
 
+        if self._hinted_positions:
+            self._mousemap.append(
+                functools.partial(
+                    self._board_click_handler,
+                    card_space=card_space,
+                ),
+            )
+
         if self._hand:
             self.screen.addstr(2, board_space + 1, self._hand_line)
             seen_new_card = False
@@ -867,6 +955,13 @@ class TUI(ConsoleUI):
                     card,
                     selected=i == self._hand_ptr,
                     new=new,
+                )
+                self._mousemap.append(
+                    functools.partial(
+                        self._hand_click_handler,
+                        x_start=board_space + 1,
+                        card_space=card_space,
+                    ),
                 )
 
         if self._discard:
@@ -890,6 +985,7 @@ class TUI(ConsoleUI):
             )
 
         if self._dead_card:
+            self._mousemap = []
             dialog_y = (screen_lines // 2) - 6
             dialog_x = (screen_columns // 2) - 20
             self._fill(dialog_y, dialog_x, 12, 40, curses.COLOR_BLUE, shadow=True)
@@ -910,6 +1006,15 @@ class TUI(ConsoleUI):
                 "Want to discard it?",
                 self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
             )
+
+            def on_click_yes():
+                self._dead_card_discard = True
+                self._dead_card = None
+
+            def on_click_no():
+                self._dead_card_discard = False
+                self._dead_card = None
+
             self._button(
                 dialog_y + 8,
                 dialog_x + 29,
@@ -917,6 +1022,7 @@ class TUI(ConsoleUI):
                 bg_color=curses.COLOR_CYAN
                 if self._dead_card_discard
                 else curses.COLOR_WHITE,
+                on_click=on_click_yes,
             )
             self._button(
                 dialog_y + 8,
@@ -925,9 +1031,11 @@ class TUI(ConsoleUI):
                 bg_color=curses.COLOR_WHITE
                 if self._dead_card_discard
                 else curses.COLOR_CYAN,
+                on_click=on_click_no,
             )
 
         if self._alert:
+            self._mousemap = []
             alert_text, button_text = self._alert
             alert_lines = alert_text.splitlines()
             width = max(len(alert_text) + 2, len(button_text) + 4)
@@ -944,11 +1052,16 @@ class TUI(ConsoleUI):
                     line,
                     self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
                 )
+
+            def on_click_alert_button():
+                self._alert = None
+
             self._button(
                 dialog_y + height - 4,
                 dialog_x + width - len(button_text) - 3,
                 button_text,
                 bg_color=curses.COLOR_CYAN,
+                on_click=on_click_alert_button,
             )
 
         self.screen.refresh()
