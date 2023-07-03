@@ -447,6 +447,13 @@ class ConsoleUI:
         self._log_message(
             f"{winning_team} has won with {len(winning_sequences)} sequences!"
         )
+        return "Exit"
+
+    def player_has_empty_hand(self, player, sequences):
+        scores = ", ".join(f"{k}: {len(v)}" for k, v in sequences.items())
+        self._log_message(
+            f"{player} has an empty hand.  The final scores are: {scores}"
+        )
 
     def notify_pickup(self, player, card):
         self._log_message(f"[{player}] You picked up the {card}.")
@@ -588,13 +595,21 @@ class TUI(ConsoleUI):
         self._loglines.append(message)
         self._redraw()
 
-    def _do_alert(self, message, button="OK"):
-        self._alert = (message, button)
+    def _do_alert(self, message, buttons=("OK",)):
+        self._alert = (message, buttons, 0)
         self._redraw()
         while self._alert:
             key = self._getch()
+            message, buttons, i = self._alert
             if key == curses.KEY_ENTER:
                 self._alert = None
+                return buttons[i]
+            if key == curses.KEY_LEFT:
+                self._alert = (message, buttons, (i - 1) % len(buttons))
+                self._redraw()
+            elif key == curses.KEY_RIGHT:
+                self._alert = (message, buttons, (i + 1) % len(buttons))
+                self._redraw()
 
     def update_board(self, board):
         self._board = board
@@ -624,14 +639,21 @@ class TUI(ConsoleUI):
         self._do_alert(
             f"{player} used the {pretty_card(card)} to remove {team_text}'s "
             f"chip on the {pretty_card(board_card)} at {pos}",
-            button_text,
+            [button_text],
         )
 
     def game_over(self, winning_team, sequences, shut_out=False):
         msg = f"{winning_team} has won with {len(sequences)} sequences!"
         if shut_out:
             msg += "\n\nIt was a shut out."
-        self._do_alert(msg, "Exit")
+        return self._do_alert(msg, ["Exit", "Keep Playing"])
+
+    def player_has_empty_hand(self, player, sequences):
+        scores = "\n".join(f"{k}: {len(v)}" for k, v in sequences.items())
+        self._do_alert(
+            f"{player} has an empty hand.  The final scores are:\n\n{scores}",
+            ["Exit"],
+        )
 
     def _hand_click_handler(self, y, x, state, x_start, card_space):
         if not (3 <= y <= 5):
@@ -895,7 +917,7 @@ class TUI(ConsoleUI):
                     and x <= mouse_x < x + len(text) + 2
                     and state & curses.BUTTON1_CLICKED
                 ):
-                    on_click()
+                    return on_click()
 
             self._mousemap.append(mouse_handler)
 
@@ -1036,9 +1058,12 @@ class TUI(ConsoleUI):
 
         if self._alert:
             self._mousemap = []
-            alert_text, button_text = self._alert
+            alert_text, buttons, ptr = self._alert
             alert_lines = alert_text.splitlines()
-            width = max(len(alert_text) + 2, len(button_text) + 4)
+            width = max(
+                max(len(x) for x in alert_lines) + 2,
+                sum(len(x) + 3 for x in buttons) + 2,
+            )
             height = 7 + len(alert_lines)
             dialog_y = (screen_lines // 2) - (height // 2)
             dialog_x = (screen_columns // 2) - (width // 2)
@@ -1053,16 +1078,20 @@ class TUI(ConsoleUI):
                     self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
                 )
 
-            def on_click_alert_button():
-                self._alert = None
+            def on_click_alert_button(i):
+                self._alert = (alert_text, buttons, i)
+                return curses.KEY_ENTER
 
-            self._button(
-                dialog_y + height - 4,
-                dialog_x + width - len(button_text) - 3,
-                button_text,
-                bg_color=curses.COLOR_CYAN,
-                on_click=on_click_alert_button,
-            )
+            x_pos = dialog_x + width
+            for i, btn in reversed(list(enumerate(buttons))):
+                x_pos -= len(btn) + 3
+                self._button(
+                    dialog_y + height - 4,
+                    x_pos,
+                    btn,
+                    bg_color=curses.COLOR_CYAN if i == ptr else curses.COLOR_WHITE,
+                    on_click=functools.partial(on_click_alert_button, i),
+                )
 
         self.screen.refresh()
 
@@ -1274,6 +1303,9 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
 
 
 def play_game(teams, ui):
+    keep_playing = False
+    sequences = {}
+
     if len(teams) == 2:
         sequences_to_win = 2
     elif len(teams) == 3:
@@ -1328,6 +1360,11 @@ def play_game(teams, ui):
             player.hand.append(deck.pop())
 
     for player in itertools.cycle(players):
+        if not player.hand:
+            # Ending condition for keep_playing mode.
+            ui.player_has_empty_hand(player, sequences)
+            return max(sequences, key=lambda k: len(sequences[k]))
+
         ui.notify_turn(player)
         ui.update_board(board)
 
@@ -1375,14 +1412,18 @@ def play_game(teams, ui):
         sequences = {team: board.get_winning_sequences_for_team(team) for team in teams}
         winning_sequences = sequences[player.team]
 
-        if len(winning_sequences) >= sequences_to_win:
+        if len(winning_sequences) >= sequences_to_win and not keep_playing:
             shut_out = True
             for team, seqs in sequences.items():
                 if seqs and team is not player.team:
                     shut_out = False
             ui.update_board(board)
-            ui.game_over(player.team, winning_sequences, shut_out=shut_out)
-            return player.team
+            if (
+                ui.game_over(player.team, winning_sequences, shut_out=shut_out)
+                == "Exit"
+            ):
+                return player.team
+            keep_playing = True
 
         if deck:
             card = deck.pop()
