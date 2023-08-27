@@ -38,18 +38,6 @@ class ConsoleUI:
     def notify_pickup(self, player, card):
         self._log_message(f"[{player}] You picked up the {card}.")
 
-    def query_dead_card(self, player, card):
-        while True:
-            answer = input(
-                f"[{player}] You have a dead card ({card}) in your hand. "
-                "Want to discard it (Y/n)? "
-            )
-            answer = answer.lower().strip()
-            if not answer or answer in ("y", "yes"):
-                return True
-            if answer in ("n", "no"):
-                return False
-
     def query_move(self, player, board):
         hand = game.sort_hand(player.hand)
         while True:

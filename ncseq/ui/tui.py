@@ -248,9 +248,13 @@ class TUI(console.ConsoleUI):
             chosen_card = self._choose_card(player)
 
             self._movelist = list(self._board.iter_moves(chosen_card, player.team))
-            if not self._movelist:
-                self._do_alert("The card is dead. It cannot be played right now.")
-                continue
+            if len(self._movelist) == 1:
+                _, action, _ = self._movelist[0]
+                if action == game.MoveType.DISCARD_DEAD_CARD:
+                    if self._query_dead_card(chosen_card):
+                        return self._movelist[0]
+                    else:
+                        continue
 
             self._hand_line = "Your Hand:  (Press Esc to choose another card)"
             self._hinted_positions = [pos for _, _, pos in self._movelist]
@@ -294,7 +298,7 @@ class TUI(console.ConsoleUI):
                     return move
                 self._move = self._next_move_from_keypress(key)
 
-    def query_dead_card(self, player, card):
+    def _query_dead_card(self, card):
         self._dead_card = card
 
         while self._dead_card:
@@ -309,7 +313,15 @@ class TUI(console.ConsoleUI):
         return self._dead_card_discard
 
     def _draw_card(
-        self, y, x, card, chip=None, selected=False, hinted=False, new=False
+        self,
+        y,
+        x,
+        card,
+        chip=None,
+        selected=False,
+        hinted=False,
+        new=False,
+        dead=False,
     ):
         bg_color = curses.COLOR_WHITE
         if hinted:
@@ -355,8 +367,14 @@ class TUI(console.ConsoleUI):
             chip_chr = ""
 
         base_attr = 0
-        if new:
+        if new or dead:
             base_attr |= curses.A_BOLD
+
+        bottom_line = "   "
+        if new:
+            bottom_line = "NEW"
+        if dead:
+            bottom_line = " D "
 
         self.screen.addstr(
             y, x, card_label, base_attr | self._color_pair(fg_color, bg_color)
@@ -374,7 +392,7 @@ class TUI(console.ConsoleUI):
         self.screen.addstr(
             y + 2,
             x,
-            "NEW" if new else "   ",
+            bottom_line,
             base_attr | self._color_pair(fg_color, bg_color),
         )
 
@@ -465,6 +483,7 @@ class TUI(console.ConsoleUI):
                     card,
                     selected=i == self._hand_ptr,
                     new=new,
+                    dead=self._board.card_is_dead(card, self._player.team),
                 )
                 self._mousemap.append(
                     functools.partial(
@@ -497,12 +516,12 @@ class TUI(console.ConsoleUI):
         if self._dead_card:
             self._mousemap = []
             dialog_y = (screen_lines // 2) - 6
-            dialog_x = (screen_columns // 2) - 20
-            self._fill(dialog_y, dialog_x, 12, 40, curses.COLOR_BLUE, shadow=True)
+            dialog_x = (screen_columns // 2) - 26
+            self._fill(dialog_y, dialog_x, 12, 52, curses.COLOR_BLUE, shadow=True)
             self.screen.addstr(
                 dialog_y + 1,
                 dialog_x + 1,
-                "You have a dead card:",
+                "This card is dead and cannot be played right now.",
                 self._color_pair(curses.COLOR_WHITE, curses.COLOR_BLUE),
             )
             self._draw_card(
@@ -527,7 +546,7 @@ class TUI(console.ConsoleUI):
 
             self._button(
                 dialog_y + 8,
-                dialog_x + 29,
+                dialog_x + 41,
                 "YES",
                 bg_color=curses.COLOR_CYAN
                 if self._dead_card_discard
@@ -536,7 +555,7 @@ class TUI(console.ConsoleUI):
             )
             self._button(
                 dialog_y + 8,
-                dialog_x + 35,
+                dialog_x + 47,
                 "NO",
                 bg_color=curses.COLOR_WHITE
                 if self._dead_card_discard

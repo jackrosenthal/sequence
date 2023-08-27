@@ -44,15 +44,8 @@ class BaseStrategy:
     def notify_move(self, player, move):
         pass
 
-    def notify_dead_card_discard(self, player, card):
-        pass
-
     def notify_pickup(self, card):
         pass
-
-    def query_dead_card(self, card):
-        # By default, assume the strategy wants to discard dead cards.
-        return True
 
     def query_move(self):
         raise NotImplementedError
@@ -71,9 +64,6 @@ class RandomStrategy(BaseStrategy):
 class HumanStrategy(BaseStrategy):
     def notify_pickup(self, card):
         self.player.ui.notify_pickup(self.player, card)
-
-    def query_dead_card(self, card):
-        return self.player.ui.query_dead_card(self.player, card)
 
     def query_move(self):
         return self.player.ui.query_move(self.player, self.board)
@@ -205,6 +195,12 @@ class SimpleWeightingStrategy(WeightedBaseStrategy):
 
     def move_weight(self, move):
         card, move_type, pos = move
+
+        # Always discard dead cards.
+        if move_type == game.MoveType.DISCARD_DEAD_CARD:
+            if card in game.ONE_EYEDS:
+                return 0
+            return 9999 * 9999
 
         weight = 0
 

@@ -63,18 +63,25 @@ def sort_hand(hand):
 class MoveType(enum.Enum):
     PLACE_CHIP = enum.auto()
     REMOVE_CHIP = enum.auto()
+    DISCARD_DEAD_CARD = enum.auto()
 
 
-def describe_move(move, board):
+def describe_move(move, board) -> str:
     card, action, pos = move
+
+    if action == MoveType.DISCARD_DEAD_CARD:
+        return f"Discard the {pretty_card(card)}."
+
     board_card, board_chip = board.getpos(pos)
     if action == MoveType.PLACE_CHIP:
         return f"Play on the {pretty_card(board_card)} at {pos}."
-    else:  # action == MoveType.REMOVE_CHIP
+    elif action == MoveType.REMOVE_CHIP:
         return (
             f"Remove the {board_chip.team}'s chip on the "
             f"{pretty_card(board_card)} at {pos}."
         )
+
+    raise TypeError(f"Invalid move type {action!r}")
 
 
 def coord_closeness_to_center(val):
@@ -91,6 +98,10 @@ def coord_closeness_to_center(val):
 
 def move_weight_centermost(move):
     card, move_type, pos = move
+    if move_type == MoveType.DISCARD_DEAD_CARD:
+        if card in ONE_EYEDS:
+            return 0
+        return 9999
     pos_x, pos_y = pos
     return min(coord_closeness_to_center(pos_x), coord_closeness_to_center(pos_y))
 
@@ -208,26 +219,34 @@ class Board:
         return (self.positions[row][column], self.chips[row][column])
 
     def iter_moves(self, card, team):
-        def removal_moves():
+        card_is_dead = True
+
+        if card in ONE_EYEDS or card == "JJ":
             for pos in iter_pos():
                 _, chip = self.getpos(pos)
                 if not chip:
                     continue
                 if chip.team is not team and not chip.is_flipped():
+                    card_is_dead = False
                     yield (card, MoveType.REMOVE_CHIP, pos)
 
-        def place_moves():
+        if card not in ONE_EYEDS:
             for pos in iter_pos():
                 pos_card, chip = self.getpos(pos)
                 if chip or pos_card is CORN:
                     continue
                 if pos_card == card or card in TWO_EYEDS or card == "JJ":
+                    card_is_dead = False
                     yield (card, MoveType.PLACE_CHIP, pos)
 
-        if card in ONE_EYEDS or card == "JJ":
-            yield from removal_moves()
-        if card not in ONE_EYEDS:
-            yield from place_moves()
+        if card_is_dead:
+            yield (card, MoveType.DISCARD_DEAD_CARD, None)
+
+    def card_is_dead(self, card, team):
+        for card, action, pos in self.iter_moves(card, team):
+            if action != MoveType.DISCARD_DEAD_CARD:
+                return False
+        return True
 
     def put_chip(self, card, pos, team):
         current_card, current_chip = self.getpos(pos)
@@ -462,72 +481,59 @@ def play_game(teams, ui):
             player.hand.append(deck.pop())
 
     for player in itertools.cycle(players):
-        if not player.hand:
-            # Ending condition for keep_playing mode.
-            ui.player_has_empty_hand(player, sequences)
-            return max(sequences, key=lambda k: len(sequences[k]))
+        while True:
+            if not player.hand:
+                # Ending condition for keep_playing mode.
+                ui.player_has_empty_hand(player, sequences)
+                return max(sequences, key=lambda k: len(sequences[k]))
 
-        ui.notify_turn(player)
-        ui.update_board(board)
-
-        # Evaluate any dead cards.
-        for card in player.hand:
-            if card in ONE_EYEDS:
-                continue
-            it = board.iter_moves(card, player.team)
-            try:
-                next(it)
-            except StopIteration:
-                # Card is dead!
-                if player.strategy.query_dead_card(card):
-                    # They want it gone.
-                    ui.notify_dead_card_discard(player, card)
-                    player.hand.remove(card)
-
-                    for notify_player in players:
-                        if notify_player is player:
-                            continue
-                        notify_player.strategy.notify_dead_card_discard(player, card)
-
-                    if deck:
-                        card = deck.pop()
-                        player.strategy.notify_pickup(card)
-                        player.hand.append(card)
-
-        # See what they want to do.
-        card, action, pos = player.strategy.query_move()
-        player.hand.remove(card)
-        if action is MoveType.PLACE_CHIP:
-            board.put_chip(card, pos, player.team)
-            ui.play_chip(player, card, pos)
-        else:
-            board_card, board_chip = board.getpos(pos)
-            board.remove_chip(card, pos, player.team)
-            ui.remove_chip(player, card, board_chip.team, board_card, pos)
-
-        for notify_player in players:
-            if notify_player is player:
-                continue
-            notify_player.strategy.notify_move(player, (card, action, pos))
-
-        # See if their team has won.
-        sequences = {team: board.get_winning_sequences_for_team(team) for team in teams}
-        winning_sequences = sequences[player.team]
-
-        if len(winning_sequences) >= sequences_to_win and not keep_playing:
-            shut_out = True
-            for team, seqs in sequences.items():
-                if seqs and team is not player.team:
-                    shut_out = False
+            ui.notify_turn(player)
             ui.update_board(board)
-            if (
-                ui.game_over(player.team, winning_sequences, shut_out=shut_out)
-                == "Exit"
-            ):
-                return player.team
-            keep_playing = True
 
-        if deck:
-            card = deck.pop()
-            player.strategy.notify_pickup(card)
-            player.hand.append(card)
+            # See what they want to do.
+            card, action, pos = player.strategy.query_move()
+            player.hand.remove(card)
+
+            if action == MoveType.DISCARD_DEAD_CARD:
+                ui.notify_dead_card_discard(player, card)
+            elif action == MoveType.PLACE_CHIP:
+                board.put_chip(card, pos, player.team)
+                ui.play_chip(player, card, pos)
+            elif action == MoveType.REMOVE_CHIP:
+                board_card, board_chip = board.getpos(pos)
+                board.remove_chip(card, pos, player.team)
+                ui.remove_chip(player, card, board_chip.team, board_card, pos)
+            else:
+                raise TypeError(f"Invalid move type {action!r}")
+
+            for notify_player in players:
+                if notify_player is player:
+                    continue
+                notify_player.strategy.notify_move(player, (card, action, pos))
+
+            # See if their team has won.
+            sequences = {
+                team: board.get_winning_sequences_for_team(team) for team in teams
+            }
+            winning_sequences = sequences[player.team]
+
+            if len(winning_sequences) >= sequences_to_win and not keep_playing:
+                shut_out = True
+                for team, seqs in sequences.items():
+                    if seqs and team is not player.team:
+                        shut_out = False
+                ui.update_board(board)
+                if (
+                    ui.game_over(player.team, winning_sequences, shut_out=shut_out)
+                    == "Exit"
+                ):
+                    return player.team
+                keep_playing = True
+
+            if deck:
+                card = deck.pop()
+                player.strategy.notify_pickup(card)
+                player.hand.append(card)
+
+            if action != MoveType.DISCARD_DEAD_CARD:
+                break
