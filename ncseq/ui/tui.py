@@ -374,7 +374,7 @@ class TUI(console.ConsoleUI):
         if new:
             bottom_line = "NEW"
         if dead:
-            bottom_line = " D "
+            bottom_line = " ☠ "
 
         self.screen.addstr(
             y, x, card_label, base_attr | self._color_pair(fg_color, bg_color)
